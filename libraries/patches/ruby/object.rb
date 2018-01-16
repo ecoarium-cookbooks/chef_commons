@@ -1,3 +1,4 @@
+require 'pp'
 require 'date'
 require 'yaml'
 
@@ -16,17 +17,6 @@ class Object
       subclasses = [superclass]
       subclasses.concat superclass.list_subclasses unless [Object, Kernel, BasicObject].include? superclass
       subclasses.uniq
-    end
-
-    def list_class_variables
-      exclude = Object.class_variables
-      class_variables.select{|v| !exclude.include?(v) }.sort
-    end 
-
-    def list_class_methods
-      exclude = Object.methods
-      exclusive_methods = methods.select{|m| !exclude.include?(m) }.sort
-      exclusive_methods
     end
 
     def pretty_class_info
@@ -57,7 +47,7 @@ Class: #{self}
   def list_instance_variables
     exclude = Object.new.instance_variables
     self.instance_variables.select{|object_variable| !exclude.include?(object_variable) }.sort
-  end 
+  end
 
   def list_instance_methods
     exclude = Object.new.methods
@@ -67,48 +57,58 @@ Class: #{self}
 
   def pretty_instance_info
     var_list = self.list_instance_variables.collect{|var_name|
-      "#{var_name.inspect} - #{instance_variable_get(var_name).inspect}"
+      "#{var_name.inspect} - #{instance_variable_get(var_name).pretty_inspect}"
     }
 
     method_list = self.list_instance_methods.collect {|objects_method|
-      method_object = self.method(objects_method)
-      params = method_object.parameters
-
-      method_argument_list = []
-      unless params.empty?
-        method_argument_list = params.collect{|arg_info|
-          argument_display = ""
-          case arg_info[0]
-          when :req
-            argument_display = arg_info[1]
-          when :opt
-            argument_display = "#{arg_info[1]}=default"
-          when :rest
-            arg_name = arg_info[1]
-            arg_name = 'args' if arg_name.nil?
-            argument_display = "*#{arg_name}"
-          when :keyreq
-            argument_display = arg_info[1].inspect
-          when :key
-            argument_display = "#{arg_info[1].inspect}=default"
-          when :keyrest
-            arg_name = arg_info[1]
-            arg_name = 'named_args' if arg_name.nil?
-            argument_display = "**#{named_args}"
-          when :block
-            arg_name = arg_info[1]
-            arg_name = 'block' if arg_name.nil?
-            argument_display = "&#{arg_info[1]}"
-          else
-            argument_display = "<unknown-arg-type?#{arg_info.inspect}?unknown-arg-type>"
-          end
-
-          argument_display
-        }
+      method_object = nil
+      begin
+        method_object = self.method(objects_method)
+      rescue
       end
 
       location = "<location unknown>"
-      location = method_object.source_location.join(":") unless method_object.source_location.nil?
+      method_argument_list = []
+
+      begin
+        unless method_object.nil?
+          params = method_object.parameters
+
+          unless params.empty?
+            method_argument_list = params.collect{|arg_info|
+              argument_display = ""
+              case arg_info[0]
+              when :req
+                argument_display = arg_info[1]
+              when :opt
+                argument_display = "#{arg_info[1]}=default"
+              when :rest
+                arg_name = arg_info[1]
+                arg_name = 'args' if arg_name.nil?
+                argument_display = "*#{arg_name}"
+              when :keyreq
+                argument_display = arg_info[1].inspect
+              when :key
+                argument_display = "#{arg_info[1].inspect}=default"
+              when :keyrest
+                arg_name = arg_info[1]
+                arg_name = 'named_args' if arg_name.nil?
+                argument_display = "**#{arg_name}"
+              when :block
+                arg_name = arg_info[1]
+                arg_name = 'block' if arg_name.nil?
+                argument_display = "&#{arg_info[1]}"
+              else
+                argument_display = "<unknown-arg-type?#{arg_info.inspect}?unknown-arg-type>"
+              end
+
+              argument_display
+            }
+          end
+          location = method_object.source_location.join(":") unless method_object.source_location.nil?
+        end
+      rescue Exception => e
+      end
 
       "#{objects_method}(#{method_argument_list.join(", ")}) -- #{location}"
     }
@@ -124,7 +124,7 @@ Instance Methods:
      #{method_list.join("\n     ")}
 
 Instance Variables:
-     #{var_list.join("\n     ")}
+     #{var_list.join("\n\n     ")}
 /
   end
 
@@ -151,14 +151,14 @@ Instance Variables:
 
     converted = StringIO.new
     lines = yaml_dump.split("\n")
-    
+
     for index in 1..lines.length-1
       line = lines[index]
 
       if line =~ /\!ruby\/object:/ and !lines[index + 1].nil?
         current_lines_prefix_space = line[/^(\s+)/,1]
         next_lines_prefix_space = lines[index + 1][/^(\s+)/,1]
-        
+
         if (current_lines_prefix_space.nil? and !next_lines_prefix_space.nil?) or (!current_lines_prefix_space.nil? and !next_lines_prefix_space.nil? and next_lines_prefix_space.length > current_lines_prefix_space.length)
           line.gsub!(/\s+\!ruby\/object:.*/, '')
         end
@@ -168,7 +168,7 @@ Instance Variables:
       line.gsub!(/\!ruby\/class '(.*)'/, 'ruby/class:\\1')
       converted.puts line
     end
-    
+
     yaml = converted.string
 
     YAML::load(yaml)
@@ -182,6 +182,8 @@ Instance Variables:
     instance_exec(*args, &block)
   end
 
+  #example:
+  # time_bomb("02/20/2015 02:00 PM", "your message") { optional closure... }
   def time_bomb(datetime, message = 'you wanted to address this by now!', *args, &block)
     timebomb_armed = false
     unless ENV['TIME_BOMB_ARM'].nil?
@@ -191,11 +193,16 @@ Instance Variables:
 
     datetime = DateTime.strptime("#{datetime} -05:00", '%m/%d/%Y %I:%M %p %:z') if datetime.is_a?(String)
     datetime = datetime.to_datetime if datetime.is_a?(Date)
+    location = caller[0]
+    if caller[0].split(':')[2] == "in `todo'"
+      location = caller[1]
+    end
     fail %/
 
       Message:\t\t#{message}
       Detonate on:\t#{datetime}
       Now:\t\t#{DateTime.now}
+      Location:\t\t#{location}
     / if timebomb_armed && datetime < DateTime.now
 
     instance_exec(*args, &block) if block_given?

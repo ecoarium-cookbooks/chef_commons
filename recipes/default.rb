@@ -1,4 +1,5 @@
 
+chef_gem 'awesome_print'
 chef_gem 'deep_merge'
 
 chef_gem 'mixlib-shellout' do
