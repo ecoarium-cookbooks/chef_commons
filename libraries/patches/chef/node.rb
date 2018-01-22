@@ -12,6 +12,10 @@ class Chef
       self.class.node = self
     end
 
+    def save
+
+    end
+
     class << self
 
       @node = nil
@@ -25,7 +29,7 @@ class Chef
       end
 
     end
-    
+
     class MultiMash
       include LoadDeepMerge
 
